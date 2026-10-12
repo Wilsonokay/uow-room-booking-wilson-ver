@@ -1,1 +1,398 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Campus Room Booking</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f3f6fb;
+      color: #172033;
+    }
+    header {
+      background: #243b75;
+      color: white;
+      padding: 24px 7%;
+    }
+    header h1 { margin: 0 0 8px; }
+    header p { margin: 0; color: #dce6ff; }
+    main { max-width: 1100px; margin: 28px auto; padding: 0 18px; }
+    .panel, .room {
+      background: white;
+      padding: 22px;
+      border-radius: 14px;
+      box-shadow: 0 3px 14px #17203312;
+      margin-bottom: 20px;
+    }
+    .toolbar, .room-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+    }
+    label { display: block; font-weight: 600; margin: 12px 0 6px; }
+    input, select, button {
+      width: 100%;
+      padding: 11px;
+      border-radius: 8px;
+      border: 1px solid #ccd4e2;
+      font: inherit;
+    }
+    button {
+      background: #3157b7;
+      color: white;
+      border: 0;
+      cursor: pointer;
+      margin-top: 14px;
+      font-weight: 600;
+    }
+    button:hover { background: #243b75; }
+    button.delete { background: #b42335; }
+    button.secondary { background: #e9eef9; color: #243b75; }
+    .muted { color: #65718a; font-size: 14px; }
+    .room h3 { margin-top: 0; }
+    .tag {
+      display: inline-block;
+      background: #e8efff;
+      color: #2449a0;
+      padding: 5px 9px;
+      border-radius: 20px;
+      font-size: 13px;
+    }
+    .hidden { display: none; }
+    #message { font-weight: 600; margin-bottom: 16px; }
+    footer { text-align: center; padding: 24px; color: #65718a; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Campus Room Booking</h1>
+  <p>Find a room. Reserve your space. Learn together.</p>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Welcome</h2>
+    <p class="muted">Choose your role to explore the booking system.</p>
+    <label for="role">I am a:</label>
+    <select id="role">
+      <option value="student">Student</option>
+      <option value="teacher">Teacher</option>
+    </select>
+    <label for="person">Your name</label>
+    <input id="person" placeholder="Enter your name" maxlength="60">
+    <p id="message" role="status" aria-live="polite"></p>
+  </section>
+
+  <section id="teacherPanel" class="panel hidden">
+    <h2>Create a room</h2>
+    <form id="roomForm">
+      <label for="roomName">Room name</label>
+      <input id="roomName" placeholder="e.g. Study Room A" required maxlength="80">
+
+      <label for="location">Location</label>
+      <input id="location" placeholder="e.g. Library, Level 2" required maxlength="120">
+
+      <label for="date">Booking date</label>
+      <input id="date" type="date" required>
+
+      <div class="toolbar">
+        <div>
+          <label for="start">Start time</label>
+          <input id="start" type="time" required>
+        </div>
+        <div>
+          <label for="end">End time</label>
+          <input id="end" type="time" required>
+        </div>
+      </div>
+
+      <label for="capacity">Maximum students</label>
+      <input id="capacity" type="number" min="1" max="500" value="5" required>
+      <button type="submit">Create Room</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Available Rooms</h2>
+    <p class="muted">Choose a room to view its details and make a booking.</p>
+    <div id="rooms" class="room-grid"></div>
+  </section>
+
+  <section class="panel">
+    <h2 id="bookingHeading">My Bookings</h2>
+    <div id="myBookings"></div>
+  </section>
+
+  <section id="allBookingsPanel" class="panel hidden">
+    <h2>All Student Bookings</h2>
+    <div id="allBookings"></div>
+  </section>
+</main>
+
+<footer>Campus Room Booking System</footer>
+
+<script>
+  // DEMO ONLY: data is saved in this browser, not shared online.
+  const STORAGE_KEY = "campus-room-booking-v1";
+  const $ = id => document.getElementById(id);
+
+  function loadData() {
+    try {
+      const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (data && Array.isArray(data.rooms) &&
+          Array.isArray(data.bookings)) return data;
+    } catch (_) {}
+    return { rooms: [], bookings: [] };
+  }
+
+  let data = loadData();
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      return true;
+    } catch (_) {
+      showMessage("Could not save data in this browser.");
+      return false;
+    }
+  }
+
+  function showMessage(message) {
+    $("message").textContent = message;
+  }
+
+  function currentName() {
+    return $("person").value.trim();
+  }
+
+  function isTeacher() {
+    return $("role").value === "teacher";
+  }
+
+  function escapeHTML(value) {
+    return String(value).replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;",
+      '"': "&quot;", "'": "&#39;"
+    })[c]);
+  }
+
+  function roomById(id) {
+    return data.rooms.find(room => room.id === id);
+  }
+
+  function render() {
+    $("teacherPanel").classList.toggle("hidden", !isTeacher());
+    $("allBookingsPanel").classList.toggle("hidden", !isTeacher());
+    $("bookingHeading").textContent =
+      isTeacher() ? "My Bookings" : "My Bookings";
+
+    renderRooms();
+    renderMyBookings();
+    renderAllBookings();
+  }
+
+  function renderRooms() {
+    const rooms = $("rooms");
+    const today = new Date().toLocaleDateString("en-CA");
+    const visibleRooms = data.rooms.filter(room => room.date >= today);
+
+    if (!visibleRooms.length) {
+      rooms.innerHTML = '<p class="muted">No rooms available yet.</p>';
+      return;
+    }
+
+    rooms.innerHTML = visibleRooms.map(room => {
+      const bookings = data.bookings.filter(b => b.roomId === room.id);
+      const mine = bookings.some(b =>
+        b.student.toLowerCase() === currentName().toLowerCase()
+      );
+      const remaining = room.capacity - bookings.length;
+
+      return `
+        <article class="room">
+          <span class="tag">${remaining > 0 ? "Available" : "Fully booked"}</span>
+          <h3>${escapeHTML(room.name)}</h3>
+          <p>📍 ${escapeHTML(room.location)}</p>
+          <p>📅 ${escapeHTML(room.date)}</p>
+          <p>🕒 ${escapeHTML(room.start)} – ${escapeHTML(room.end)}</p>
+          <p>👥 ${bookings.length} / ${room.capacity} students</p>
+          ${!isTeacher() ? `
+            <button data-book="${escapeHTML(room.id)}"
+              ${remaining <= 0 || mine ? "disabled" : ""}>
+              ${mine ? "Already Booked" : remaining <= 0 ? "Fully Booked" : "Book Room"}
+            </button>` : `
+            <button class="secondary" data-view="${escapeHTML(room.id)}">
+              View Students
+            </button>
+            <button class="delete" data-delete="${escapeHTML(room.id)}">
+              Delete Room
+            </button>`}
+          ${isTeacher() ? `
+            <div id="students-${escapeHTML(room.id)}" class="muted"></div>
+          ` : ""}
+        </article>`;
+    }).join("");
+  }
+
+  function renderMyBookings() {
+    const mine = data.bookings.filter(b =>
+      b.student.toLowerCase() === currentName().toLowerCase()
+    );
+    $("myBookings").innerHTML = mine.length ? mine.map(b => {
+      const room = roomById(b.roomId);
+      return `
+        <div class="room">
+          <strong>${escapeHTML(room ? room.name : "Room removed")}</strong>
+          <p class="muted">${room ? escapeHTML(room.date + " · " + room.start + "–" + room.end) : ""}</p>
+          <button class="secondary" data-cancel="${escapeHTML(b.id)}">
+            Cancel Booking
+          </button>
+        </div>`;
+    }).join("") : '<p class="muted">No bookings yet.</p>';
+  }
+
+  function renderAllBookings() {
+    if (!isTeacher()) return;
+    const rows = data.bookings.map(b => {
+      const room = roomById(b.roomId);
+      return `<div class="room">
+        <strong>${escapeHTML(b.student)}</strong>
+        <p>${escapeHTML(room ? room.name : "Room removed")}</p>
+        <p class="muted">${room ? escapeHTML(room.date + " · " + room.start + "–" + room.end) : ""}</p>
+      </div>`;
+    });
+    $("allBookings").innerHTML = rows.length
+      ? rows.join("") : '<p class="muted">No student bookings yet.</p>';
+  }
+
+  $("role").addEventListener("change", () => {
+    showMessage("");
+    render();
+  });
+
+  $("person").addEventListener("input", render);
+
+  $("roomForm").addEventListener("submit", event => {
+    event.preventDefault();
+    if (!isTeacher()) return;
+    if (!currentName()) {
+      showMessage("Enter your name first.");
+      return;
+    }
+
+    const room = {
+      id: crypto.randomUUID(),
+      name: $("roomName").value.trim(),
+      location: $("location").value.trim(),
+      date: $("date").value,
+      start: $("start").value,
+      end: $("end").value,
+      capacity: Number($("capacity").value),
+      teacher: currentName()
+    };
+
+    if (room.date < new Date().toLocaleDateString("en-CA") ||
+        room.end <= room.start || room.capacity < 1) {
+      showMessage("Check the date, time, and capacity.");
+      return;
+    }
+
+    const overlaps = data.rooms.some(r =>
+      r.date === room.date && r.location.toLowerCase() === room.location.toLowerCase() &&
+      room.start < r.end && room.end > r.start
+    );
+    if (overlaps) {
+      showMessage("This location already has a room booking at that time.");
+      return;
+    }
+
+    data.rooms.push(room);
+    if (!save()) return;
+    $("roomForm").reset();
+    $("capacity").value = 5;
+    showMessage("Room created successfully.");
+    render();
+  });
+
+  $("rooms").addEventListener("click", event => {
+    const button = event.target.closest("button");
+    if (!button) return;
+
+    if (button.dataset.book) {
+      if (isTeacher() || !currentName()) {
+        showMessage("Enter your name and select Student.");
+        return;
+      }
+      const room = roomById(button.dataset.book);
+      if (!room) return;
+
+      const alreadyBooked = data.bookings.some(b =>
+        b.roomId === room.id &&
+        b.student.toLowerCase() === currentName().toLowerCase()
+      );
+      const count = data.bookings.filter(b => b.roomId === room.id).length;
+
+      if (alreadyBooked || count >= room.capacity) {
+        showMessage("This room is already booked by you or is full.");
+        return;
+      }
+
+      data.bookings.push({
+        id: crypto.randomUUID(),
+        roomId: room.id,
+        student: currentName()
+      });
+      if (!save()) return;
+      showMessage("Room booked successfully!");
+      render();
+    }
+
+    if (button.dataset.delete) {
+      if (!isTeacher()) return;
+      const id = button.dataset.delete;
+      if (!confirm("Delete this room and its bookings?")) return;
+      data.rooms = data.rooms.filter(r => r.id !== id);
+      data.bookings = data.bookings.filter(b => b.roomId !== id);
+      if (!save()) return;
+      showMessage("Room deleted.");
+      render();
+    }
+
+    if (button.dataset.view) {
+      const id = button.dataset.view;
+      const names = data.bookings.filter(b => b.roomId === id)
+        .map(b => b.student);
+      const target = $("students-" + id);
+      if (target) target.textContent = names.length
+        ? "Students: " + names.join(", ")
+        : "No students booked this room.";
+    }
+  });
+
+  $("myBookings").addEventListener("click", event => {
+    const button = event.target.closest("[data-cancel]");
+    if (!button || !currentName()) return;
+
+    const booking = data.bookings.find(b => b.id === button.dataset.cancel);
+    if (!booking || booking.student.toLowerCase() !== currentName().toLowerCase()) {
+      showMessage("You can only cancel your own bookings.");
+      return;
+    }
+
+    data.bookings = data.bookings.filter(b => b.id !== booking.id);
+    if (!save()) return;
+    showMessage("Booking cancelled.");
+    render();
+  });
+
+  // Set minimum selectable date to today.
+  $("date").min = new Date().toLocaleDateString("en-CA");
+  render();
+</script>
+</body>
+</html>
+
